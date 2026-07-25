@@ -12,6 +12,20 @@ if HFT_DIR not in sys.path:
 
 from hft_transformer.model import amt
 
+def get_device():
+    """Détecte l'accélérateur matériel disponible (IPEX/XPU, CUDA, ou CPU)."""
+    try:
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return torch.device("xpu")
+    except Exception:
+        pass
+    try:
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+    except Exception:
+        pass
+    return torch.device("cpu")
+
 def run_hft(audio_path, options):
     """
     Exécute l'inférence avec le modèle hFT-Transformer (Sony).
@@ -22,10 +36,10 @@ def run_hft(audio_path, options):
     Protection des notes graves :
     - Les notes graves (pitch < 36 = Do1) sont systématiquement protégées
     - Les seuils de détection sont adaptés pour ne pas supprimer les pianissimo
-    
-    Le device (XPU/Intel Arc, CUDA/NVIDIA, CPU) est détecté automatiquement
-    par la classe AMT (priorité: XPU > CUDA > CPU).
     """
+    device = get_device()
+    print(f"[Transcriber] Exécution de hFT-Transformer sur device : {device}...")
+
     config_path = os.path.join(HFT_DIR, 'corpus', 'config.json')
     # Les poids de MAESTRO-V3 sont dans le sous-dossier avec ce nom spécifique
     model_path = os.path.join(HFT_DIR, 'checkpoint', 'MAESTRO-V3', 'model_016_003.pkl')
@@ -39,12 +53,28 @@ def run_hft(audio_path, options):
         config = json.load(f)
 
     print("[Transcriber] Chargement du modèle en mémoire...")
-    # Charger la classe AMT de Sony - la détection de device (XPU/CUDA/CPU) est gérée internement
+    # Charger la classe AMT de Sony
     AMT = amt.AMT(config, model_path, verbose_flag=False)
-    
-    # Afficher le device utilisé
-    device = AMT.device
-    print(f"[Transcriber] Exécution de hFT-Transformer sur device : {device}...")
+
+    # Patch device sur TOUS les sous-modules du modèle (self.device est sérialisé en 'cuda')
+    target_device_str = str(device)
+    patched_dev = 0
+    for module in AMT.model.modules():
+        if hasattr(module, 'device'):
+            module.device = target_device_str
+            patched_dev += 1
+    print(f"[Transcriber] self.device patché sur {patched_dev} sous-modules → '{target_device_str}'")
+
+    # Patch device dynamically to support XPU (Intel ARC), fallback CPU
+    try:
+        AMT.model = AMT.model.to(device)
+        AMT.device = device
+        print(f"[Transcriber] Modèle déplacé sur {device} avec succès.")
+    except Exception as e:
+        print(f"[Transcriber] ⚠️ Impossible d'utiliser {device} ({e}), fallback CPU.")
+        device = torch.device("cpu")
+        AMT.model = AMT.model.to(device)
+        AMT.device = device
 
     # ── Seuils adaptés pour musique classique ─────────────────────────────
     # Les seuils par défaut (0.5) sont trop stricts pour la musique expressive.
