@@ -574,6 +574,10 @@
             </div>
             <span id="playback-time-display" class="playback-time-display">0:00 / 0:00</span>
           </div>
+          <div class="volume-container" style="display: flex; align-items: center; gap: 4px; margin-left: 8px;">
+            <span style="font-size: 14px;" title="Volume">🔊</span>
+            <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.7" style="width: 60px;" title="Régler le volume" />
+          </div>
         </div>
 
         <div class="tool-group tool-group-export">
@@ -589,7 +593,7 @@
       <div class="score-layout">
 
         <!-- Panneau propriétés -->
-        <aside class="props-panel">
+        <aside class="props-panel" style="overflow-y: auto; overflow-x: hidden; max-height: calc(100vh - 120px);">
           <h3 class="props-title">📌 Note sélectionnée</h3>
           <div id="properties-panel" class="props-body">
             <p class="no-selection">Cliquez sur une note<br>pour la modifier</p>

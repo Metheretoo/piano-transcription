@@ -157,9 +157,9 @@ class ScorePlayer {
    */
   async togglePlayPause(scoreData) {
     if (!scoreData) return;
-    if (!this._scoreData || this._scoreData !== scoreData) {
-      this.preparePlayback(scoreData);
-    }
+    // Toujours mettre à jour au cas où la partition a été modifiée
+    this.preparePlayback(scoreData);
+
     if (this.isPlaying) {
       this.pause();
     } else {
@@ -185,7 +185,12 @@ class ScorePlayer {
    * Planifie les notes à jouer à partir d'un temps donné (Lookahead scheduling)
    */
   _scheduleNotes(fromTime) {
-    if (!this.soundfont || !this._events) return;
+    const engineSelect = document.getElementById('sound-engine');
+    const engine = engineSelect ? engineSelect.value : 'soundfont';
+
+    if (!this._events) return;
+    if (engine === 'soundfont' && !this.soundfont) return;
+    if (engine === 'synth' && !this.audioCtx) return;
     
     // Si fromTime est défini, on vient de faire un "play" ou un "seek", on réinitialise l'index
     if (fromTime !== undefined) {
@@ -206,10 +211,20 @@ class ScorePlayer {
       const eventTime = this._startTime + event.time;
       // Ne jouer que si l'événement n'est pas déjà dans le passé (avec une petite tolérance)
       if (eventTime >= currentTime - 0.05) {
-        const node = this.soundfont.play(event.pitch, Math.max(currentTime, eventTime), {
-          gain: event.velocity,
-          duration: event.duration
-        });
+        const volInput = document.getElementById('volume-slider');
+        const masterVolume = volInput ? parseFloat(volInput.value) : 1.0;
+        const adjustedVelocity = event.velocity * masterVolume;
+
+        let node = null;
+        if (engine === 'soundfont') {
+          node = this.soundfont.play(event.pitch, Math.max(currentTime, eventTime), {
+            gain: adjustedVelocity,
+            duration: event.duration
+          });
+        } else if (engine === 'synth') {
+          node = this._playSynth(event.pitch, Math.max(currentTime, eventTime), event.duration, adjustedVelocity);
+        }
+        
         if (node) {
           this._scheduledNodes.push(node);
         }
@@ -295,6 +310,47 @@ class ScorePlayer {
       this._pauseTime = newTime;
     }
     this._updatePlaybackPosition(newTime);
+  }
+
+  /**
+   * Joue une note avec un synthétiseur basique
+   */
+  _playSynth(pitch, time, duration, velocity) {
+    if (!this.audioCtx) return null;
+    const osc = this.audioCtx.createOscillator();
+    const gain = this.audioCtx.createGain();
+    
+    // Convertir MIDI pitch en fréquence
+    const freq = 440 * Math.pow(2, (pitch - 69) / 12);
+    osc.frequency.value = freq;
+    osc.type = 'triangle'; // Un son plus doux
+    
+    // Enveloppe simple pour éviter les clics
+    const start = time;
+    const end = time + duration;
+    const attack = 0.02;
+    const release = 0.05;
+    
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(velocity, start + attack);
+    gain.gain.setValueAtTime(velocity, Math.max(start + attack, end - release));
+    gain.gain.linearRampToValueAtTime(0, end);
+    
+    osc.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    
+    osc.start(start);
+    osc.stop(end);
+    
+    return {
+      stop: () => {
+        try {
+          osc.stop();
+          osc.disconnect();
+          gain.disconnect();
+        } catch(e) {}
+      }
+    };
   }
 }
 

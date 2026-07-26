@@ -1,4 +1,4 @@
-﻿/**
+/**
  * editor.js — Éditeur interactif de partition
  *
  * Responsabilités :
@@ -991,8 +991,8 @@ class ScoreEditor {
       <div style="margin-top:12px;border-top:1px solid var(--panel-border,#333);padding-top:10px;">
         <span class="prop-label" style="display:block;margin-bottom:6px;">✏️ Modifier l'accord</span>
         <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
-          <button id="prop-add-note-up"   class="tool-btn" style="font-size:10px;padding:3px 6px;" title="Ajouter demi-ton au-dessus">+½↑</button>
-          <button id="prop-add-note-down" class="tool-btn" style="font-size:10px;padding:3px 6px;" title="Ajouter demi-ton en-dessous">+½↓</button>
+          <button id="prop-add-note-up"   class="tool-btn" style="font-size:10px;padding:3px 6px;" title="Ajouter une tierce majeure au-dessus (+4)">+Tierce↑</button>
+          <button id="prop-add-note-down" class="tool-btn" style="font-size:10px;padding:3px 6px;" title="Ajouter une quinte juste en-dessous (-7)">+Quinte↓</button>
           <button id="prop-add-octave-up" class="tool-btn" style="font-size:10px;padding:3px 6px;" title="Ajouter octave au-dessus">+8↑</button>
           <button id="prop-add-octave-dn" class="tool-btn" style="font-size:10px;padding:3px 6px;" title="Ajouter octave en-dessous">+8↓</button>
         </div>
@@ -1013,10 +1013,10 @@ class ScoreEditor {
       });
     });
     panel.querySelector('#prop-add-note-up')?.addEventListener('click', () => {
-      this.addNoteToChord(midiPitch + 1);
+      this.addNoteToChord(midiPitch + 4);
     });
     panel.querySelector('#prop-add-note-down')?.addEventListener('click', () => {
-      this.addNoteToChord(midiPitch - 1);
+      this.addNoteToChord(midiPitch - 7);
     });
     panel.querySelector('#prop-add-octave-up')?.addEventListener('click', () => {
       this.addNoteToChord(midiPitch + 12);

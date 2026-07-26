@@ -1406,6 +1406,30 @@ function initToolbar() {
     player.togglePlayPause(scoreData);
   });
 
+  if (typeof renderer !== 'undefined' && renderer) {
+    renderer.onNoteRightClick(async (noteId, info) => {
+      if (!info || !info.noteData) return;
+      const scoreData = editor.getScoreData();
+      if (!scoreData) return;
+      
+      const tempo = scoreData.tempo || 120;
+      const secondsPerBeat = 60.0 / tempo;
+      const startTime = info.noteData.startBeat * secondsPerBeat;
+      
+      // Ensure player is ready
+      player.preparePlayback(scoreData);
+
+      
+      if (player._totalTime > 0) {
+        const pct = startTime / player._totalTime;
+        player.seekTo(pct);
+        if (!player.isPlaying) {
+          await player.play();
+        }
+      }
+    });
+  }
+
   const timeline = document.getElementById('playback-timeline');
   if (timeline) {
     timeline.addEventListener('click', (e) => {

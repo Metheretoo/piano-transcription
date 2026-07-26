@@ -63,6 +63,9 @@ class ScoreRenderer {
   /** Enregistre le callback appelé lors d'un clic sur une note. */
   onNoteClick(cb) { this._clickCb = cb; }
 
+  /** Enregistre le callback appelé lors d'un clic droit sur une note. */
+  onNoteRightClick(cb) { this._rightClickCb = cb; }
+
   /* ── Rendu principal ────────────────────────────────────────────────── */
   render(scoreData) {
     if (!scoreData || !scoreData.measures || scoreData.measures.length === 0) {
@@ -998,7 +1001,10 @@ class ScoreRenderer {
 
     svg.style.cursor = 'default';
 
-    svg.addEventListener('click', (e) => {
+    ['click', 'contextmenu'].forEach(evtType => {
+      svg.addEventListener(evtType, (e) => {
+        if (evtType === 'contextmenu') e.preventDefault();
+
       // Recherche de l'ID de note en remontant le DOM depuis la cible du clic
       let target = e.target;
       let noteId = null;
@@ -1066,18 +1072,20 @@ class ScoreRenderer {
 
       if (noteId && info) {
         e.stopPropagation();
-        if (typeof showToast === 'function') {
-          showToast(`Note/Silence sélectionné`, 'success', 2000);
+        if (evtType === 'click') {
+          if (typeof showToast === 'function') showToast(`Note/Silence sélectionné`, 'success', 2000);
+          if (this._clickCb) this._clickCb(noteId, info, clickedKeyIdx, e);
+        } else if (evtType === 'contextmenu') {
+          if (this._rightClickCb) this._rightClickCb(noteId, info, clickedKeyIdx, e);
         }
-        this._clickCb(noteId, info, clickedKeyIdx, e);
       } else {
-        if (typeof showToast === 'function') {
-          showToast(`Clic hors note (Cible : ${targetDesc})`, 'info', 1500);
+        if (evtType === 'click') {
+          if (typeof showToast === 'function') showToast(`Clic hors note (Cible : ${targetDesc})`, 'info', 1500);
+          if (this._clickCb) this._clickCb(null, null, null, e);
         }
-        // Clic en dehors d'une note -> désélection
-        this._clickCb(null, null, null, e);
       }
     });
+  });
   }
 
   /* ── Accords Jazz ───────────────────────────────────────────────────── */
