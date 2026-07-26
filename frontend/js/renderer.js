@@ -420,18 +420,43 @@ class ScoreRenderer {
     const bassBeams = processBeams(bassStaveNotes, bassNotesData, 'bass');
 
     // 4. ALIGNEMENT RYTHMIQUE CONJOINT (FORMATTER)
-    const availW = trebleStave.getX() + trebleStave.getWidth() - trebleStave.getNoteStartX() - 12;
+
+    // ── GARDE-FOU SYNCHRONISATION HORIZONTALE (noteStartX) ─────────────────
+    // La clé de Sol et la clé de Fa ont des largeurs légèrement différentes dans
+    // VexFlow : leur getNoteStartX() peut diverger de quelques pixels, ce qui
+    // provoquerait un décalage horizontal des notes même avec un formatter parfait.
+    // On force les deux portées à partager le même noteStartX (le plus grand)
+    // AVANT de calculer availW et de formater les voix.
+    const trebleNSX = trebleStave.getNoteStartX();
+    const bassNSX   = bassStave.getNoteStartX();
+    const maxNSX    = Math.max(trebleNSX, bassNSX);
+    if (Math.abs(trebleNSX - bassNSX) > 0) {
+      // setNoteStartX est disponible dans VexFlow 4.x ; accès direct en fallback
+      if (typeof trebleStave.setNoteStartX === 'function') trebleStave.setNoteStartX(maxNSX);
+      else trebleStave.noteStartX = maxNSX;
+      if (typeof bassStave.setNoteStartX   === 'function') bassStave.setNoteStartX(maxNSX);
+      else bassStave.noteStartX = maxNSX;
+    }
+
+    const availW   = trebleStave.getX() + trebleStave.getWidth() - maxNSX - 12;
     const formatter = new VF.Formatter();
 
-    // On regroupe les voix des deux portées pour les aligner ensemble sur la même grille temporelle
+    // ── GARDE-FOU SYNCHRONISATION MAIN GAUCHE / MAIN DROITE (FORMATTER) ────
+    // Règle VexFlow pour le grand staff :
+    //  • joinVoices([voix...]) → résolution des collisions INTRA-portée
+    //    (chaque portée gère ses propres voix séparément)
+    //  • format([toutesLesVoix], width) → grille X PARTAGÉE entre portées
+    // ATTENTION : joinVoices([treble, bass]) en un seul appel traiterait les deux
+    // portées comme concurrentes sur la MÊME portée — résultat incorrect.
     const activeVoices = [];
     if (trebleNotesData.length > 0) activeVoices.push(trebleVoice);
-    if (bassNotesData.length > 0) activeVoices.push(bassVoice);
+    if (bassNotesData.length > 0)   activeVoices.push(bassVoice);
 
     try {
       if (trebleNotesData.length > 0) formatter.joinVoices([trebleVoice]);
-      if (bassNotesData.length > 0) formatter.joinVoices([bassVoice]);
-      if (activeVoices.length > 0) {
+      if (bassNotesData.length   > 0) formatter.joinVoices([bassVoice]);
+      if (activeVoices.length    > 0) {
+        // format() avec les deux voix crée la grille X commune → alignement parfait
         formatter.format(activeVoices, Math.max(availW, 60));
       }
     } catch (e) {
@@ -457,46 +482,40 @@ class ScoreRenderer {
       } catch (e) { console.warn('[Renderer] Draw bass conjoint :', e.message); }
     }
 
-    // ── Centrage des pauses (silences seuls dans une mesure) ────
-    // VexFlow les colle au début ; on les translate au centre de la portée.
-    // AMÉLIORÉ : supporte toutes les durées de silence (ronde, blanche, noire, etc.)
+    // ── Centrage des pauses (silences seuls dans une mesure) ────────────────
+    // VexFlow place le silence au début de la mesure ; on le translate au centre.
+    // BUG CORRIGÉ : VexFlow 4.x préfixe lui-même les IDs avec "vf-", donc le vrai
+    // ID dans le DOM est "vf-vf-{id}" (confirmé par highlightNote qui essaie
+    // getElementById('vf-vf-' + id) en premier). L'ancienne recherche '#vf-{id}'
+    // ne trouvait rien → le silence restait collé à gauche.
     const centerWholeRest = (notesData, staveNotesList, stave) => {
-      if (notesData.length === 1 && notesData[0].isRest) {
-        const sn = staveNotesList[0];
-        const el = sn && sn.attrs && sn.attrs.el ? sn.attrs.el : null;
-        const svg = this.container.querySelector('svg');
-        const groupEl = el || (svg && svg.querySelector('#vf-' + notesData[0].id)) ||
-                        (svg && svg.querySelector('[id$="' + notesData[0].id + '"]'));
-        if (groupEl) {
-          try {
-            const bbox = groupEl.getBBox();
-            const noteStartX = stave.getNoteStartX();
-            const staveEndX = stave.getX() + stave.getWidth();
-            const staveCenter = (noteStartX + staveEndX) / 2;
-            const noteCenter = bbox.x + bbox.width / 2;
-            const dx = staveCenter - noteCenter;
-            
-            // Ajustement vertical selon la durée du silence
-            let dy = 0;
-            const durStr = notesData[0].durationStr;
-            if (durStr === 'w') {
-              // Ronde : centrée verticalement sur la ligne du milieu
-              dy = 0;
-            } else if (durStr === 'h') {
-              // Blanche : légèrement au-dessus du centre
-              dy = -5;
-            } else if (durStr === 'q') {
-              // Noire : position standard
-              dy = 0;
-            }
-            
-            if (Math.abs(dx) > 2 || Math.abs(dy) > 0) {
-              const currentTransform = groupEl.getAttribute('transform') || '';
-              groupEl.setAttribute('transform', currentTransform + ` translate(${dx}, ${dy})`);
-            }
-          } catch (_) { }
+      if (notesData.length !== 1 || !notesData[0].isRest) return;
+      const nd  = notesData[0];
+      const svg = this.container.querySelector('svg');
+      if (!svg) return;
+
+      // Chercher l'élément SVG avec tous les formats de préfixe possibles
+      const groupEl =
+        svg.querySelector('#vf-vf-' + nd.id) ||   // VexFlow 4.x (préfixe double)
+        svg.querySelector('#vf-' + nd.id)     ||   // Ancien format
+        svg.querySelector('[id$="' + nd.id + '"]'); // Fallback générique
+
+      if (!groupEl) return;
+      try {
+        const bbox = groupEl.getBBox();
+        if (!bbox || bbox.width === 0) return; // Élément non rendu, abandonner
+
+        const noteStartX  = stave.getNoteStartX();
+        const staveEndX   = stave.getX() + stave.getWidth();
+        const staveCenter = (noteStartX + staveEndX) / 2;
+        const noteCenter  = bbox.x + bbox.width / 2;
+        const dx = staveCenter - noteCenter;
+
+        if (Math.abs(dx) > 1) {
+          const currentTransform = groupEl.getAttribute('transform') || '';
+          groupEl.setAttribute('transform', currentTransform + ` translate(${dx}, 0)`);
         }
-      }
+      } catch (_) { }
     };
 
     // On attend que le DOM soit mis à jour (le draw() est synchrone en SVG VexFlow)
